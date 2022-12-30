@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sample_flutter_async_value/pages/login/page.dart';
-import 'package:sample_flutter_async_value/services/user.dart';
+import 'package:sample_flutter_async_value/presentation/pages/login/page.dart';
+import 'package:sample_flutter_async_value/infrastructure/services/user.dart';
 
-import 'pages/home/page.dart';
+import 'presentation/pages/home/page.dart';
 
 final scaffoldMessengerKeyProvider = Provider((_) {
   return GlobalKey<ScaffoldMessengerState>();
