@@ -1,115 +1,161 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sample_flutter_async_value/pages/login/page.dart';
+import 'package:sample_flutter_async_value/services/user.dart';
+
+import 'pages/home/page.dart';
+
+final scaffoldMessengerKeyProvider = Provider((_) {
+  return GlobalKey<ScaffoldMessengerState>();
+});
+
+final navigatorKeyProvider = Provider((_) {
+  return GlobalKey<NavigatorState>();
+});
 
 void main() {
-  runApp(const MyApp());
+  runApp(
+    const ProviderScope(
+      child: App(),
+    ),
+  );
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class App extends ConsumerWidget {
+  const App({Key? key}) : super(key: key);
 
-  // This widget is the root of your application.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.handleAsyncValue<void>(
+      loginProvider,
+      completeMessage: 'ログインしました',
+      complete: (context, _) async {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) {
+              return const HomePage();
+            },
+          ),
+        );
+      },
+    );
+
+    ref.handleAsyncValue<void>(
+      logoutStateProvider,
+      completeMessage: 'ログアウトしました',
+      complete: (context, _) {
+        Navigator.pop(context);
+      },
+    );
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // Try running your application with "flutter run". You'll see the
-        // application has a blue toolbar. Then, without quitting the app, try
-        // changing the primarySwatch below to Colors.green and then invoke
-        // "hot reload" (press "r" in the console where you ran "flutter run",
-        // or simply save your changes to "hot reload" in a Flutter IDE).
-        // Notice that the counter didn't reset back to zero; the application
-        // is not restarted.
-        primarySwatch: Colors.blue,
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      title: 'Sample Flutter Async Value',
+      scaffoldMessengerKey: ref.watch(scaffoldMessengerKeyProvider),
+      navigatorKey: ref.watch(navigatorKeyProvider),
+      home: const LoginPage(),
+      builder: (context, child) {
+        return Consumer(
+          builder: (context, ref, _) {
+            final isLoading = ref.watch(loadingProvider);
+
+            return Stack(
+              children: [
+                child!,
+                if (isLoading)
+                  const ColoredBox(
+                    color: Colors.black26,
+                    child: Center(
+                      child: CircularProgressIndicator.adaptive(),
+                    ),
+                  )
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+final loadingProvider = NotifierProvider<LoadingNotifier, bool>(
+  LoadingNotifier.new,
+);
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
+class LoadingNotifier extends Notifier<bool> {
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  bool build() => false;
+
+  void show() => state = true;
+
+  void hide() => state = false;
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+extension WidgetRefEx on WidgetRef {
+  /// AsyncValueを良い感じにハンドリングする
+  void handleAsyncValue<T>(
+    ProviderListenable<AsyncValue<T>> asyncValueProvider, {
+    void Function(BuildContext context, T data)? complete,
+    String? completeMessage,
+  }) =>
+      listen<AsyncValue<T>>(
+        asyncValueProvider,
+        (_, next) async {
+          final loadingNotifier = read(loadingProvider.notifier);
+          if (next.isLoading) {
+            loadingNotifier.show();
+            return;
+          }
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
+          next.when(
+            data: (data) async {
+              loadingNotifier.hide();
+
+              // 完了メッセージがあればスナックバーを表示する
+              if (completeMessage != null) {
+                final messengerState =
+                    read(scaffoldMessengerKeyProvider).currentState;
+                messengerState?.showSnackBar(
+                  SnackBar(
+                    content: Text(completeMessage),
+                  ),
+                );
+              }
+              complete?.call(read(navigatorKeyProvider).currentContext!, data);
+            },
+            error: (e, s) async {
+              loadingNotifier.hide();
+
+              // エラーが発生したらエラーダイアログを表示する
+              await showDialog<void>(
+                context: read(navigatorKeyProvider).currentContext!,
+                builder: (context) => ErrorDialog(error: e),
+              );
+            },
+            loading: loadingNotifier.show,
+          );
+        },
+      );
+}
+
+/// エラーダイアログ
+class ErrorDialog extends StatelessWidget {
+  const ErrorDialog({
+    super.key,
+    required this.error,
+  });
+
+  final Object error;
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Invoke "debug painting" (press "p" in the console, choose the
-          // "Toggle Debug Paint" action from the Flutter Inspector in Android
-          // Studio, or the "Toggle Debug Paint" command in Visual Studio Code)
-          // to see the wireframe for each widget.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headline4,
-            ),
-          ],
+    return AlertDialog(
+      title: const Text('エラー'),
+      content: Text(error.toString()),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('OK'),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+      ],
     );
   }
 }
